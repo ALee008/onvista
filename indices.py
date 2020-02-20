@@ -3,6 +3,7 @@ import bs4
 import urllib.parse
 import pandas as pd
 import numpy as np
+import logging
 
 from tools import clock
 
@@ -12,41 +13,75 @@ url_ = "https://www.onvista.de/index/"
 class DAX:
     def __init__(self):
         self.url = urllib.parse.urljoin(url_, "einzelwerte/DAX-Index-20735")
-        self.soup = None
+        self._soup = self.parse_url_for_components()
+        self._stock_to_href_dict = self._create_stock_to_href_dict()
+        self.prepared_components = None
 
-    def parse_url_for_components(self) -> None:
+    def parse_url_for_components(self) -> bs4.BeautifulSoup:
         request = requests.get(self.url)
-        self.soup = bs4.BeautifulSoup(request.content, "html.parser")
+        soup = bs4.BeautifulSoup(request.content, "html.parser")
 
-        assert self.soup, "self.soup must not be empty or None"
+        assert soup, "self.soup must not be empty or None"
 
+        return soup
+
+    def _create_stock_to_href_dict(self) -> dict:
+        """get all components from DAX components table. For instance:
+
+        >>> print(_components_details[0])
+        <a class="TEXT_DICK" href="/aktien/Deutsche-Bank-Aktie-DE0005140008" title="DEUTSCHE BANK AG">Deutsche Bank</a>
+        :return (dict): maps company name -> href to stock info
+        """
+        _components_details = self._soup.find_all("a", attrs={"class": ["TEXT_DICK"]})
+
+        # get components name in upper case
+        components = [comp.string.replace(" ", "-") if '...' not in comp.string else comp.get("title")
+                      for comp in _components_details]
+        components = list(map(str.upper, components))
+        hrefs = [comp.get("href") for comp in _components_details]
+
+        assert len(components) == len(hrefs), "number of stocks and number of corresponding href must be equal."
+
+        return dict(zip(components, hrefs))
+
+    def prepare_components(self) -> None:
+        stocks = dict()
+        for stock, stock_href in self._stock_to_href_dict.items():
+            stocks[stock] = Stock(stock_href)
+
+        self.prepared_components = stocks
         return None
-
-    def stock(self, stock_href: str) -> object:
-        pass
 
     @property
     def components(self) -> list:
-        components = [comp.get("title") for comp in self.soup if comp.get("class") == ['TEXT_DICK']]
-
-        return components
+        return list(self._stock_to_href_dict.keys())
 
 
 class Stock:
     def __init__(self, stock_href: str):
         """"""
-        self.url = urllib.parse.urljoin("https://www.onvista.de/", stock_href)
+        self.stock_href = stock_href
+        self.url = urllib.parse.urljoin("https://www.onvista.de/", self.stock_href)
         # get isin, e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> DE0005552004
-        self.isin = stock_href.split("-")[0]
+        self.isin = self.stock_href.split("-")[0]
         # get full name. e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> Deutsche-Post-Aktie-DE0005552004
-        self.fullname = stock_href.split("/")[1]
+        self.fullname = self.stock_href.split("/")[2]
+
+    def __call__(self, *args, **kwargs):
         self.fundamentals = self._fundamental_figures()
         self.technical = self._technical_figures()
         self.corporate = self._corporate_figures()
 
+    def __repr__(self):
+        cls_ = type(self).__name__
+        fmt_repr = f"{cls_}('{self.stock_href}')"
+
+        return fmt_repr
+
     @clock()
     def _get_data_frame_from_url(self, url: str) -> list:
         stock_url = urllib.parse.urljoin(url, self.fullname)
+        logging.info(f"Calling pandas.read_html('{stock_url}')")
         data_frames = pd.read_html(stock_url, decimal=',', thousands='.')
 
         return data_frames
@@ -59,9 +94,27 @@ class Stock:
         url = "https://www.onvista.de/aktien/technische-kennzahlen/"
         return self._get_data_frame_from_url(url)
 
-    def _corporate_figures(self) -> list:
+    def _corporate_figures(self) -> dict:
+        """master data information is not saved in table, thus pd.read_html returns empty result.
+        Instead the master data is scraped manually and result returned in dictionary.
+        """
         url = "https://www.onvista.de/aktien/unternehmensprofil/"
-        return self._get_data_frame_from_url(url)
+        request = requests.get(urllib.parse.urljoin(url, self.fullname))
+        soup = bs4.BeautifulSoup(request.content, "html.parser")
+        master_data = soup.find_all("article", attrs={"class": ["STAMMDATEN"]})
+
+        def get_data_from_dt_dd(bs4_tag: bs4.element.Tag) -> dict:
+            """get data from dt and dd tags"""
+            dt_tag_text = [tag.text for tag in bs4_tag.find_all("dt")]
+            dd_tag_text = [tag.text if '...' not in tag.text else tag.get("title") for tag in bs4_tag.find_all("dd")]
+
+            assert len(dd_tag_text) == len(dt_tag_text), "number of labels and number of values must be equal."
+
+            dict_data = dict(zip(dt_tag_text, dd_tag_text))
+
+            return dict_data
+
+        return get_data_from_dt_dd(master_data[0])
 
     def _revenue_figures(self) -> pd.DataFrame:
         # revenue figures are in second DataFrame in fundamentals
@@ -128,6 +181,16 @@ class Stock:
     def perf_5y(self):
         return self._performance_figures().loc["5 Jahre"]
 
+    @property
+    def sector(self):
+        return self.corporate["Sektor"]
+
+    @property
+    def industry(self):
+        return self.corporate["Branche"]
+
 
 if __name__ == '__main__':
-    pass
+    d = DAX()
+    d.prepare_components()
+    bmw = d.prepared_components["BMW"]
