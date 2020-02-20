@@ -4,14 +4,14 @@ import urllib.parse
 import pandas as pd
 import numpy as np
 
+from tools import clock
 
-class FinancialIndex:
-    url = "https://www.onvista.de/index/"
+url_ = "https://www.onvista.de/index/"
 
 
-class DAX(FinancialIndex):
+class DAX:
     def __init__(self):
-        self.url = urllib.parse.urljoin(FinancialIndex.url, "einzelwerte/DAX-Index-20735")
+        self.url = urllib.parse.urljoin(url_, "einzelwerte/DAX-Index-20735")
         self.soup = None
 
     def parse_url_for_components(self) -> None:
@@ -40,25 +40,31 @@ class Stock:
         self.isin = stock_href.split("-")[0]
         # get full name. e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> Deutsche-Post-Aktie-DE0005552004
         self.fullname = stock_href.split("/")[1]
-        self.fundamentals = self.fundamental_figures()
-        self.technical = self.technical_figures()
+        self.fundamentals = self._fundamental_figures()
+        self.technical = self._technical_figures()
+        self.corporate = self._corporate_figures()
 
-    def fundamental_figures(self) -> list:
+    @clock()
+    def _get_data_frame_from_url(self, url: str) -> list:
+        stock_url = urllib.parse.urljoin(url, self.fullname)
+        data_frames = pd.read_html(stock_url, decimal=',', thousands='.')
+
+        return data_frames
+
+    def _fundamental_figures(self) -> list:
         url = "https://www.onvista.de/aktien/fundamental/"
-        stock_url = urllib.parse.urljoin(url, self.fullname)
-        data_frames = pd.read_html(stock_url, decimal=',', thousands='.')
+        return self._get_data_frame_from_url(url)
 
-        return data_frames
-
-    def technical_figures(self) -> list:
+    def _technical_figures(self) -> list:
         url = "https://www.onvista.de/aktien/technische-kennzahlen/"
-        stock_url = urllib.parse.urljoin(url, self.fullname)
-        data_frames = pd.read_html(stock_url, decimal=',', thousands='.')
+        return self._get_data_frame_from_url(url)
 
-        return data_frames
+    def _corporate_figures(self) -> list:
+        url = "https://www.onvista.de/aktien/unternehmensprofil/"
+        return self._get_data_frame_from_url(url)
 
-    def revenue_figures(self) -> pd.DataFrame:
-        # revenue figures is second DataFrame in fundamentals
+    def _revenue_figures(self) -> pd.DataFrame:
+        # revenue figures are in second DataFrame in fundamentals
         df = self.fundamentals[1]
         # rename first column
         revenue = df.rename(columns={df.columns[0]: "revenue"})
@@ -66,8 +72,8 @@ class Stock:
 
         return revenue
 
-    def dividend_figures(self) -> pd.DataFrame:
-        # dividend figures is third DataFrame in fundamentals
+    def _dividend_figures(self) -> pd.DataFrame:
+        # dividend figures are in third DataFrame in fundamentals
         df = self.fundamentals[2]
         # rename first column
         dividend = df.rename(columns={df.columns[0]: "dividend"})
@@ -75,8 +81,8 @@ class Stock:
 
         return dividend
 
-    def market_capitalization_figures(self) -> pd.DataFrame:
-        # market capitalization figures is eighth DataFrame in fundamentals
+    def _market_capitalization_figures(self) -> pd.DataFrame:
+        # market capitalization figures are in eighth DataFrame in fundamentals
         df = self.fundamentals[7]
         # rename first column
         market_cap = df.rename(columns={df.columns[0]: "market_cap"})
@@ -84,24 +90,43 @@ class Stock:
 
         return market_cap
 
+    def _performance_figures(self) -> pd.DataFrame:
+        # performance figures are in last DataFrame in technicals
+        df = self.technical[-1]
+        perf = df.rename(columns={df.columns[0]: "time_span"})
+        # set time_span as index
+        perf = perf.iloc[:, :2].set_index("time_span")
+        # cast column Perf. from `object` to `float`.
+        perf = perf["Perf."].str.replace("%", "").str.replace(",", ".").astype(np.float64) / 100
+
+        return perf
+
     @property
     def market_capitalization(self) -> pd.Series:
-        df_market_cap = self.market_capitalization_figures().T["Marktkapitalisierung in Mio. EUR"].astype(np.float64)
+        df_market_cap = self._market_capitalization_figures().T["Marktkapitalisierung in Mio. EUR"].astype(np.float64)
 
         return df_market_cap
 
     @property
     def dividend_yield(self) -> pd.Series:
-        df_dividend = self.dividend_figures().T["Dividendenrendite"]
+        df_dividend = self._dividend_figures().T["Dividendenrendite"]
 
         return df_dividend
 
     @property
     def pe_ratio(self) -> pd.Series:
         """Price-To-Earnings-Ratio (P/E Ratio)"""
-        df_pe_ratio = self.revenue_figures().T["KGV"]
+        df_pe_ratio = self._revenue_figures().T["KGV"]
 
         return df_pe_ratio
+
+    @property
+    def perf_1y(self):
+        return self._performance_figures().loc["1 Jahr"]
+
+    @property
+    def perf_5y(self):
+        return self._performance_figures().loc["5 Jahre"]
 
 
 if __name__ == '__main__':
