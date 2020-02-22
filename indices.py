@@ -7,12 +7,14 @@ import logging
 
 from tools import clock
 
+logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
+
 url_ = "https://www.onvista.de/index/"
 
 
-class DAX:
-    def __init__(self):
-        self.url = urllib.parse.urljoin(url_, "einzelwerte/DAX-Index-20735")
+class Index:
+    def __init__(self, index_url: str):
+        self.url = urllib.parse.urljoin(url_, index_url)
         self._soup = self.parse_url_for_components()
         self._stock_to_href_dict = self._create_stock_to_href_dict()
         self.prepared_components = None
@@ -44,7 +46,7 @@ class DAX:
 
         return dict(zip(components, hrefs))
 
-    def prepare_components(self) -> None:
+    def init_components(self) -> None:
         stocks = dict()
         for stock, stock_href in self._stock_to_href_dict.items():
             stocks[stock] = Stock(stock_href)
@@ -62,15 +64,15 @@ class Stock:
         """"""
         self.stock_href = stock_href
         self.url = urllib.parse.urljoin("https://www.onvista.de/", self.stock_href)
-        # get isin, e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> DE0005552004
-        self.isin = self.stock_href.split("-")[0]
         # get full name. e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> Deutsche-Post-Aktie-DE0005552004
         self.fullname = self.stock_href.split("/")[2]
 
     def __call__(self, *args, **kwargs):
         self.fundamentals = self._fundamental_figures()
         self.technical = self._technical_figures()
-        self.corporate = self._corporate_figures()
+        self.corporate_details = self._corporate_figures()
+
+        return self
 
     def __repr__(self):
         cls_ = type(self).__name__
@@ -78,7 +80,7 @@ class Stock:
 
         return fmt_repr
 
-    @clock()
+    #@clock()
     def _get_data_frame_from_url(self, url: str) -> list:
         stock_url = urllib.parse.urljoin(url, self.fullname)
         logging.info(f"Calling pandas.read_html('{stock_url}')")
@@ -94,6 +96,7 @@ class Stock:
         url = "https://www.onvista.de/aktien/technische-kennzahlen/"
         return self._get_data_frame_from_url(url)
 
+    #@clock()
     def _corporate_figures(self) -> dict:
         """master data information is not saved in table, thus pd.read_html returns empty result.
         Instead the master data is scraped manually and result returned in dictionary.
@@ -149,6 +152,8 @@ class Stock:
         perf = df.rename(columns={df.columns[0]: "time_span"})
         # set time_span as index
         perf = perf.iloc[:, :2].set_index("time_span")
+        # replace strings n.a.% from DataFrame column `Perf.`
+        perf.loc[perf["Perf."] == "n.a.%", "Perf."] = np.nan
         # cast column Perf. from `object` to `float`.
         perf = perf["Perf."].str.replace("%", "").str.replace(",", ".").astype(np.float64) / 100
 
@@ -156,7 +161,12 @@ class Stock:
 
     @property
     def market_capitalization(self) -> pd.Series:
-        df_market_cap = self._market_capitalization_figures().T["Marktkapitalisierung in Mio. EUR"].astype(np.float64)
+        df_market_cap = self._market_capitalization_figures().T["Marktkapitalisierung in Mio. EUR"]
+        # replace "-" with np.nan
+        df_market_cap = df_market_cap.replace("-", np.nan)
+        df_market_cap = df_market_cap.astype(np.float64)
+        # remove NaNs
+        df_market_cap = df_market_cap[~df_market_cap.isna()]
 
         return df_market_cap
 
@@ -168,10 +178,15 @@ class Stock:
 
     @property
     def pe_ratio(self) -> pd.Series:
-        """Price-To-Earnings-Ratio (P/E Ratio)"""
-        df_pe_ratio = self._revenue_figures().T["KGV"]
+        """Price-To-Earnings-Ratio (P/E Ratio) (dt. Kurs-Gewinn-Verhaeltnis, KGV)."""
+        df_pe_ratio = self._revenue_figures().T["KGV"].str.replace("-", "0").astype(np.float64)
 
         return df_pe_ratio
+
+    @property
+    def isin(self):
+        # get isin, e.g.: aktien/Deutsche-Post-Aktie-DE0005552004 -> DE0005552004
+        return self.stock_href.split("-")[-1]
 
     @property
     def perf_1y(self):
@@ -183,14 +198,18 @@ class Stock:
 
     @property
     def sector(self):
-        return self.corporate["Sektor"]
+        return self.corporate_details["Sektor"]
 
     @property
     def industry(self):
-        return self.corporate["Branche"]
+        return self.corporate_details["Branche"]
+
+    @property
+    def corporate(self):
+        return self.corporate_details["Unternehmen"]
 
 
 if __name__ == '__main__':
-    d = DAX()
-    d.prepare_components()
-    bmw = d.prepared_components["BMW"]
+    dax = Index("einzelwerte/DAX-Index-20735")
+    dax.init_components()
+    bmw = dax.prepared_components["BMW"]
