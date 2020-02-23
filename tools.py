@@ -3,8 +3,11 @@ import time
 import configparser
 import pandas as pd
 import multiprocessing
-
 from multiprocessing.pool import ThreadPool
+import logging
+
+logger = logging
+logger.basicConfig(format='%(levelname)s: %(asctime)s - %(message)s', level=logging.INFO)
 
 # DEFAULT_FMT = '[{elapsed:0.8f}s] {name}({args}) -> {result}'
 DEFAULT_FMT = '[{elapsed:0.8f}s] {name}({args})'
@@ -59,12 +62,13 @@ def export_df(data: pd.DataFrame, file_name: str) -> None:
     _, extension = os.path.splitext(file_name)
     export = {
         '.html': data.to_html,
-        '.json': data.to_json
+        '.json': data.to_json,
+        ".xlsx": data.to_excel,
     }
     try:
         export[extension](file_path)
     except KeyError:
-        print(f"{extension} format not supported. Supported extensions: {list(export.keys())}")
+        logger(f"{extension} format not supported. Supported extensions: {list(export.keys())}")
         raise
 
     return None

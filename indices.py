@@ -3,11 +3,9 @@ import bs4
 import urllib.parse
 import pandas as pd
 import numpy as np
-import logging
 
-from tools import clock
+from tools import logger
 
-logging.basicConfig(format='%(asctime)s - %(message)s', level=logging.INFO)
 
 url_ = "https://www.onvista.de/index/"
 
@@ -80,10 +78,9 @@ class Stock:
 
         return fmt_repr
 
-    #@clock()
     def _get_data_frame_from_url(self, url: str) -> list:
         stock_url = urllib.parse.urljoin(url, self.fullname)
-        logging.info(f"Calling pandas.read_html('{stock_url}')")
+        logger.info(f"Calling pandas.read_html('{stock_url}')")
         data_frames = pd.read_html(stock_url, decimal=',', thousands='.')
 
         return data_frames
@@ -96,7 +93,6 @@ class Stock:
         url = "https://www.onvista.de/aktien/technische-kennzahlen/"
         return self._get_data_frame_from_url(url)
 
-    #@clock()
     def _corporate_figures(self) -> dict:
         """master data information is not saved in table, thus pd.read_html returns empty result.
         Instead the master data is scraped manually and result returned in dictionary.
