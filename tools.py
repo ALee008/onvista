@@ -7,7 +7,7 @@ from multiprocessing.pool import ThreadPool
 import logging
 
 logger = logging
-logger.basicConfig(format='%(levelname)s: %(asctime)s - %(message)s', level=logging.INFO)
+logger.basicConfig(format='%(levelname)s: %(asctime)s - %(message)s', level=logging.DEBUG)
 
 # DEFAULT_FMT = '[{elapsed:0.8f}s] {name}({args}) -> {result}'
 DEFAULT_FMT = '[{elapsed:0.8f}s] {name}({args})'
@@ -68,7 +68,7 @@ def export_df(data: pd.DataFrame, file_name: str) -> None:
     try:
         export[extension](file_path)
     except KeyError:
-        logger(f"{extension} format not supported. Supported extensions: {list(export.keys())}")
+        logger.error(f"{extension} format not supported. Supported extensions: {list(export.keys())}")
         raise
 
     return None
