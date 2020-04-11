@@ -2,10 +2,11 @@ from indices import Index
 from strategy import Dogs
 import tools
 
-mdax = Index("einzelwerte/MDAX-Index-323547")
-mdax.init_components()
-dax_stocks_dict = mdax.prepared_components
+tec = Index("Dow-Jones-Index-324977")
+tec.init_components()
+dax_stocks_dict = tec.prepared_components
 stocks_for_strategy = tools.multiprocess(lambda x: x(), list(dax_stocks_dict.values()))
 dogs = Dogs(stocks_for_strategy)
 res = dogs.dogs_result_df
-tools.export_df(res, "mdax.xlsx")
+app = dogs.apply_dogs_strategy(res, 1.5)
+tools.export_df(app, "dow_jones.xlsx")

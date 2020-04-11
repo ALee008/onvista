@@ -14,7 +14,7 @@ DEFAULT_FMT = '[{elapsed:0.8f}s] {name}({args})'
 
 # read configurations
 config = configparser.ConfigParser()
-config.read("onvista.ini")
+config.read("configuration.ini")
 defaults = config["DEFAULT"]
 
 # if max number of parallel processes = 0, set it to number of available CPU.

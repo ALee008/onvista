@@ -7,7 +7,7 @@ import numpy as np
 from tools import logger
 
 
-url_ = "https://www.onvista.de/index/"
+url_ = "https://www.onvista.de/index/einzelwerte/"
 
 
 class Index:
@@ -151,7 +151,7 @@ class Stock:
         # replace strings n.a.% from DataFrame column `Perf.`
         perf.loc[perf["Perf."] == "n.a.%", "Perf."] = np.nan
         # cast column Perf. from `object` to `float`.
-        perf = perf["Perf."].str.replace("%", "").str.replace(",", ".").astype(np.float64) / 100
+        perf = perf["Perf."].str.replace("%", "").str.replace(".", "").str.replace(",", ".", 1).astype(np.float64) / 100
 
         return perf
 

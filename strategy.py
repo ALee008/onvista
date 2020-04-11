@@ -45,13 +45,20 @@ class Dogs(Strategy):
         # return later as part of warning
         return failed_downloads
 
-    def apply_dogs_strategy(self, data: pd.DataFrame):
+    def apply_dogs_strategy(self, data: pd.DataFrame, market_capitalization: float = 5):
+        """
+
+        :param data: final DataFrame to apply strategy on.
+        :param market_capitalization: companies with market capitalization bigger that this number (unit = billion)
+        are incorporated into the strategy.
+        :return:
+        """
         logger.info(f"Executing strategy Dog's of the Dow for year {self.current_year}.")
         df = data.copy()
         df["aggregate"] = (df["perf_1y"].fillna(0.)
                            + df["perf_5y"].fillna(0.)
                            + df["DIVe"].fillna(0.)) / 3
-        df = df[df["market_capitalization"] / 1000 > 5]
+        df = df[df["market_capitalization"] / 1000 > market_capitalization]
 
         df = df.sort_values(by=["sector", "aggregate"])
 
